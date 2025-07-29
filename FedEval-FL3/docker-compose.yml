@@ -1,0 +1,59 @@
+networks:
+  server-clients:
+    driver: bridge
+services:
+  container_0:
+    cap_add:
+    - NET_ADMIN
+    command: sh -c "export CONTAINER_ID=0 && python3 -W ignore -m FedEval.run -f run
+      -r client -c configs/crudeCNN"
+    container_name: container0
+    depends_on:
+    - server
+    deploy:
+      resources:
+        limits:
+          cpus: '40'
+    environment:
+    - NVIDIA_VISIBLE_DEVICES=-1
+    image: fedeval:v2
+    networks:
+    - server-clients
+    volumes:
+    - /home/nirnayg/new_cs/FedEval-FL3:/FML
+    working_dir: /FML
+  container_1:
+    cap_add:
+    - NET_ADMIN
+    command: sh -c "export CONTAINER_ID=1 && python3 -W ignore -m FedEval.run -f run
+      -r client -c configs/crudeCNN"
+    container_name: container1
+    depends_on:
+    - server
+    deploy:
+      resources:
+        limits:
+          cpus: '40'
+    environment:
+    - NVIDIA_VISIBLE_DEVICES=-1
+    image: fedeval:v2
+    networks:
+    - server-clients
+    volumes:
+    - /home/nirnayg/new_cs/FedEval-FL3:/FML
+    working_dir: /FML
+  server:
+    cap_add:
+    - NET_ADMIN
+    command: sh -c "python3 -W ignore -m FedEval.run -f run -r server -c configs/crudeCNN"
+    container_name: server
+    environment: []
+    image: fedeval:v2
+    networks:
+    - server-clients
+    ports:
+    - 8000:8000
+    volumes:
+    - /home/nirnayg/new_cs/FedEval-FL3:/FML
+    working_dir: /FML
+version: '3'

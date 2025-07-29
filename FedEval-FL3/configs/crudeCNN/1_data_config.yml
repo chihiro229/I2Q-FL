@@ -1,0 +1,14 @@
+data_dir: data
+use_dirichlet: 1
+beta_parameter: 0.1
+dataset: mnistt
+non-iid: false
+non-iid-class: 1 # Only work when non-iid = True
+non-iid-strategy: average # Only work when non-iid = True
+normalize: true
+sample_size: 300
+random_seed: 123
+train_val_test:
+  - 0.8
+  - 0.1
+  - 0.1

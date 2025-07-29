@@ -1,0 +1,66 @@
+# Communications
+# -- Web Service --
+jinja2==3.0.3
+itsdangerous==2.0.1
+Flask==1.1.2
+# Flask>=2.2.2 # flask 1.x.x is no longer supported by team, this is updated to accomodate absence of escape in jinja2
+# -- SocketIO --
+Werkzeug==2.0.3
+Flask-SocketIO==4.3.1
+socketIO-client==0.7.2
+python-engineio==3.13.1
+python-socketio==4.6.0
+
+# try next combo
+# Flask-SocketIO==5.2.0
+# python-engineio==4.3.3
+# python-socketio==5.7.1
+
+
+# -- gRPC --
+grpcio~=1.51.3
+grpcio-tools~=1.51.3
+
+# Computation
+numpy~=1.20.0
+scipy==1.5.4
+scikit-learn==0.24.2
+pandas==1.1.5
+torch==1.10.2
+
+# Model optimization
+absl-py~=1.2.0
+six~=1.14
+enum34~=1.1
+mock
+dm-tree~=0.1.1
+tensorflow-model-optimization==0.7.3
+
+# NLP datasets
+nltk==3.6.7
+Pillow==8.4.0
+
+# SSH
+paramiko==2.10.4
+
+# Monitor
+psutil==5.9.0
+tzlocal<3.0
+apscheduler<4.0
+
+# Serializer
+PyYAML==6.0
+Pympler==1.0.1
+hickle==4.0.4
+
+# Plots and CV
+matplotlib==3.3.4
+opencv-python-headless==4.5.5.64
+
+# Secure Protocols
+pycryptodome==3.14.1
+gmpy2==2.1.2
+phe==1.5.0
+
+# for protoc error
+protobuf==4.22.1

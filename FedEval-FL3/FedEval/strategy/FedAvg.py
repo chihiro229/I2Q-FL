@@ -1,0 +1,184 @@
+import numpy as np
+import tensorflow as tf
+
+from ..callbacks import *
+from ..config.configuration import ConfigurationManager
+from ..model import *
+from ..utils import ParamParser
+from .FederatedStrategy import FedStrategy
+
+
+class FedAvg(FedStrategy):
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+    def host_select_train_clients(self, ready_clients, client_updates, test_metrics, round_num):
+        cfg = ConfigurationManager()
+
+        # test metrics contains the information of test_loss, test_accuracy and time for all round upto the previous round
+        if round_num==1 :
+            # all clients are selected for training in first round
+            self.train_selected_clients = ready_clients
+            return self.train_selected_clients
+
+        elif round_num==2 :
+            # fill up self._IID_index_ordered_clients 
+            def calcQ(response) :
+                Q = 0
+                for d1 in response.values() : # somehow count is a string value in this so chanign to int
+                    for count, quality in d1.items():
+                        Q += (int(count) * quality)
+                return Q
+
+            temp = set(ready_clients)
+            clients = dict() # cid:quality
+
+            for response in client_updates: # we are storing the data for all clients ready or not
+                # if response['cid'] in temp :
+                clients[response['cid']] = calcQ(response['countNquality'])
+
+            sorted_clients = sorted(clients.items(), key=lambda x:x[1])
+            sorted_clients = dict(sorted_clients)
+            sorted_client_ids = list(sorted_clients.keys())
+            self._IID_index_ordered_clients = sorted_client_ids
+
+            available_clients = []
+            for id in sorted_client_ids :
+                if id in temp :
+                    available_clients.append(id)
+
+            numC = min(cfg.num_of_train_clients_contacted_per_round, len(available_clients))
+            self.train_selected_clients = available_clients[:numC]
+
+            return self.train_selected_clients # list object does not have .to_list() attribute
+        elif round_num > 2 : # 1. debug: change <= 10 to > 2
+            # non convergence conditions
+            try: # 4. debug : try except : when before exausting the round_num if the total num of clients exausted then it will through error, so to handle that try and except is added
+                accuracy_difference = float(test_metrics[round_num-2]['test_accuracy']) - float(test_metrics[round_num-3]['test_accuracy'])
+                print(f"*** accuracy_diff : round {round_num-2} - {round_num - 3} = {accuracy_difference}  ||| num_train_clients = {len(self.train_selected_clients)} *****")
+                if cfg.model_config.threshold < accuracy_difference :
+                        self.K_counter /= 2
+                        # train_clients_add = self._IID_index_ordered_clients[int(cfg.num_of_train_clients_contacted_per_round) : (cfg.num_of_train_clients_contacted_per_round)+int(self.K_counter)+1]
+                        train_clients_add = self._IID_index_ordered_clients[len(self.train_selected_clients) : len(self.train_selected_clients) + int(self.K_counter) ]
+                        cfg.num_of_train_clients_contacted_per_round += int(self.K_counter)    #3. debug: moving pointer atleast one step further in each round
+
+                        self.train_selected_clients.extend(train_clients_add)
+            except:
+                self.train_selected_clients = self.train_selected_clients
+            # 2. debug: list-->set-->list : avoid repeatation of clients
+            ls = self.train_selected_clients
+            set_ls = set()
+            for c in ls:
+                set_ls.add(c)
+            self.train_selected_clients = list(set_ls)
+
+            return self.train_selected_clients
+
+        elif self.eval_selected_clients is not None and \
+                len(self.eval_selected_clients) >= cfg.num_of_train_clients_contacted_per_round:
+            self.train_selected_clients = np.random.choice(
+                list(self.eval_selected_clients), cfg.num_of_train_clients_contacted_per_round, replace=False
+            )
+            # Clear the selected evaluation clients
+            self.eval_selected_clients = None
+        else:
+            # so even if it's the first round not all clients are selected for training ....... 
+            self.train_selected_clients = np.random.choice(
+                list(ready_clients), cfg.num_of_train_clients_contacted_per_round, replace=False
+            )
+
+
+        return self.train_selected_clients.tolist()
+
+    def host_select_evaluate_clients(self, ready_clients):
+        cfg = ConfigurationManager()
+        self.eval_selected_clients = np.random.choice(
+            list(ready_clients),
+            cfg.num_of_eval_clients_contacted_per_round,
+            replace=False
+        )
+        return self.eval_selected_clients.tolist()
+
+    def fit_on_local_data(self):
+
+        if self._has_callback():
+            self.train_data, model = self.callback.on_client_train_begin(
+                data=self.train_data, model=self.ml_model.get_weights()
+            )
+            self.ml_model.set_weights(model)
+        
+
+        self.local_params_pre = self.ml_model.get_weights()
+        mdl_cfg = ConfigurationManager().model_config
+        train_log = self.ml_model.fit(
+            x=self.train_data['x'], y=self.train_data['y'],
+            epochs=mdl_cfg.E,
+            batch_size=mdl_cfg.B,
+            verbose=0,
+        )
+        
+        train_loss = train_log.history['loss'][-1]
+        self.local_params_cur = self.ml_model.get_weights()
+
+        if self.current_round==1 :
+            # only find these things if it is first round
+            classesOrdered = np.argmax(self.train_data['y'], axis=1)
+
+            featuremodel = tf.keras.models.Model(inputs=self.ml_model.inputs, outputs = self.ml_model.output_layer)
+            feature_maps = None
+            feature_maps = featuremodel.predict(self.train_data['x'])
+            return train_loss, len(self.train_data['x']), feature_maps, classesOrdered
+         
+        return train_loss, len(self.train_data['x'])
+        
+class FedSGD(FedAvg):
+
+    # Testing Function, which is not used by any strategy
+    def compute_gradients(self, x, y):
+        with tf.GradientTape() as tape:
+            y_hat = self.ml_model(x)
+            loss_op = tf.keras.losses.get(ConfigurationManager().model_config.loss_calc_method)
+            loss = loss_op(y, y_hat)
+            gradients = tape.gradient(loss, self.ml_model.trainable_variables)
+        for i in range(len(gradients)):
+            try:
+                gradients[i] = gradients[i].numpy()
+            except AttributeError:
+                gradients[i] = tf.convert_to_tensor(gradients[0]).numpy()
+        try:
+            loss = loss.numpy()
+        except AttributeError:
+            loss = tf.convert_to_tensor(loss).numpy()
+        return loss, gradients
+
+    def host_select_train_clients(self, ready_clients):
+        self.train_selected_clients = ready_clients
+        return self.train_selected_clients
+
+    def host_select_evaluate_clients(self, ready_clients):
+        self.eval_selected_clients = ready_clients
+        return self.eval_selected_clients
+
+    def fit_on_local_data(self):
+        batched_gradients = []
+        batched_loss = []
+        actual_size = []
+        x_train = self.train_data['x']
+        y_train = self.train_data['y']
+        parallel_size = 1024
+        for i in range(0, len(x_train), parallel_size):
+            actual_size.append(min(parallel_size, len(x_train) - i))
+            tmp_loss, tmp_gradients = self.compute_gradients(
+                x_train[i:i + parallel_size], y_train[i:i + parallel_size])
+            batched_gradients.append([e / float(actual_size[-1]) for e in tmp_gradients])
+            batched_loss.append(np.mean(tmp_loss))
+        actual_size = np.array(actual_size) / np.sum(actual_size)
+        aggregated_gradients = []
+        for i in range(len(batched_gradients[0])):
+            aggregated_gradients.append(np.average([e[i] for e in batched_gradients], axis=0, weights=actual_size))
+        batched_loss = np.average(batched_loss, weights=actual_size)
+        self.local_params_pre = self.ml_model.get_weights()
+        self.ml_model.optimizer.apply_gradients(zip(aggregated_gradients, self.ml_model.trainable_variables))
+        self.local_params_cur = self.ml_model.get_weights()
+        return batched_loss, len(x_train)

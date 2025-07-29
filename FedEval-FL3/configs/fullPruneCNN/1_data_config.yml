@@ -1,0 +1,13 @@
+data_dir: data
+beta_parameter : 0.9
+dataset: gtsrb
+non-iid: true
+non-iid-class: 1 # Only work when non-iid = True
+non-iid-strategy: average # Only work when non-iid = True
+normalize: true
+sample_size: 10
+random_seed: 0
+train_val_test:
+  - 0.8
+  - 0.1
+  - 0.1
